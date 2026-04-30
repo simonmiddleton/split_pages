@@ -37,6 +37,7 @@ PDF_PATH = Path("book.pdf")
 OCR_PDF_PATH = Path("book_ocr.pdf")
 BOTTOM_CROP = 230       # pixels to trim off the bottom of each source scan
 
+XTRIM = 60
 
 def scan_section(section_path, first_page) -> int:
 
@@ -71,8 +72,8 @@ def scan_section(section_path, first_page) -> int:
 
             w, h = rotated.size
             mid = w // 2
-            left = rotated.crop((0, 0, mid, h))
-            right = rotated.crop((mid, 0, w, h))
+            left = rotated.crop((XTRIM, 0, mid - XTRIM, h))
+            right = rotated.crop((mid + XTRIM, 0, w - XTRIM, h))
 
             low_img = right if low_side == "right" else left
             high_img = left if high_side == "left" else right
