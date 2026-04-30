@@ -27,9 +27,12 @@ Output: `pages/page_03.jpg` … `pages/page_26.jpg`, in reading order.
 
 from pathlib import Path
 from PIL import Image
+import ocrmypdf
 
 SCANS_DIR = Path("scans")
 OUT_DIR = Path("pages")
+PDF_PATH = Path("book.pdf")
+OCR_PDF_PATH = Path("book_ocr.pdf")
 #NUM_SCANS = 12          # Scan.jpeg + Scan 1.jpeg … Scan 11.jpeg
 #FIRST_PAGE = 3          # page iii
 #LAST_PAGE = 26          # page xxvi
@@ -90,9 +93,40 @@ def scan_sections(sections_path):
     for section in sorted(list(sections_path.iterdir())):
         first_page += scan_section(section, first_page)
 
+def assemble_pdf(pages_dir: Path = OUT_DIR, pdf_path: Path = PDF_PATH) -> Path:
+    """Combine every JPEG in `pages_dir` (sorted by name) into a single PDF."""
+    page_files = sorted(pages_dir.glob("page_*.jpg"))
+    if not page_files:
+        raise RuntimeError(f"No pages found in {pages_dir}")
+
+    images = [Image.open(p).convert("RGB") for p in page_files]
+    first, rest = images[0], images[1:]
+    first.save(pdf_path, "PDF", save_all=True, append_images=rest)
+    for img in images:
+        img.close()
+
+    print(f"Wrote {pdf_path} ({len(page_files)} pages)")
+    return pdf_path
+
+
+def ocr_pdf(pdf_path: Path = PDF_PATH, out_path: Path = OCR_PDF_PATH) -> Path:
+    """Run OCR over `pdf_path`, producing a searchable PDF at `out_path`."""
+    ocrmypdf.ocr(
+        pdf_path,
+        out_path,
+        language="eng",
+        deskew=True,
+        progress_bar=False,
+    )
+    print(f"Wrote OCR'd PDF to {out_path}")
+    return out_path
+
+
 def main() -> None:
     OUT_DIR.mkdir(exist_ok=True)
     scan_sections(SCANS_DIR)
+    assemble_pdf()
+    ocr_pdf()
 
 
 if __name__ == "__main__":

@@ -3,5 +3,6 @@ name = "bookscans"
 version = "0.1.0"
 requires-python = ">=3.14"
 dependencies = [
+    "ocrmypdf>=17.4.2",
     "pillow>=12.2.0",
 ]
