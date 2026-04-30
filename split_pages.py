@@ -26,6 +26,8 @@ Output: `pages/page_03.jpg` … `pages/page_26.jpg`, in reading order.
 """
 
 from pathlib import Path
+import shutil
+
 from PIL import Image
 import ocrmypdf
 
@@ -33,9 +35,6 @@ SCANS_DIR = Path("scans")
 OUT_DIR = Path("pages")
 PDF_PATH = Path("book.pdf")
 OCR_PDF_PATH = Path("book_ocr.pdf")
-#NUM_SCANS = 12          # Scan.jpeg + Scan 1.jpeg … Scan 11.jpeg
-#FIRST_PAGE = 3          # page iii
-#LAST_PAGE = 26          # page xxvi
 BOTTOM_CROP = 230       # pixels to trim off the bottom of each source scan
 
 
@@ -86,12 +85,17 @@ def scan_section(section_path, first_page) -> int:
         print(f"{src.name}: page {low_page:03d} ({low_side}) + "
               f"page {high_page:03d} ({high_side})")
 
-    return page_count
+    page_num = first_page + page_count
+    for page in sorted(list(section_path.glob('*.jpg'))):
+        shutil.copy(page, OUT_DIR / f"page_{page_num:03d}.jpg")
+        page_num += 1
+
+    return page_num
 
 def scan_sections(sections_path):
     first_page = 1
     for section in sorted(list(sections_path.iterdir())):
-        first_page += scan_section(section, first_page)
+        first_page = scan_section(section, first_page)
 
 def assemble_pdf(pages_dir: Path = OUT_DIR, pdf_path: Path = PDF_PATH) -> Path:
     """Combine every JPEG in `pages_dir` (sorted by name) into a single PDF."""
