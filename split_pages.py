@@ -94,6 +94,8 @@ def scan_section(section_path, first_page) -> int:
     return page_num
 
 def scan_sections(sections_path):
+    OUT_DIR.mkdir(exist_ok=True)
+
     first_page = 1
     for section in sorted(list(sections_path.iterdir())):
         first_page = scan_section(section, first_page)
@@ -113,7 +115,6 @@ def assemble_pdf(pages_dir: Path = OUT_DIR, pdf_path: Path = PDF_PATH) -> Path:
     print(f"Wrote {pdf_path} ({len(page_files)} pages)")
     return pdf_path
 
-
 def ocr_pdf(pdf_path: Path = PDF_PATH, out_path: Path = OCR_PDF_PATH) -> Path:
     """Run OCR over `pdf_path`, producing a searchable PDF at `out_path`."""
     ocrmypdf.ocr(
@@ -122,17 +123,15 @@ def ocr_pdf(pdf_path: Path = PDF_PATH, out_path: Path = OCR_PDF_PATH) -> Path:
         language="eng",
         deskew=True,
         progress_bar=False,
+        optimize=3
     )
     print(f"Wrote OCR'd PDF to {out_path}")
     return out_path
 
-
 def main() -> None:
-    OUT_DIR.mkdir(exist_ok=True)
     scan_sections(SCANS_DIR)
     assemble_pdf()
     ocr_pdf()
-
 
 if __name__ == "__main__":
     main()
