@@ -108,18 +108,32 @@ def build_searchable_pdf(
     pdf_path: Path = PDF_PATH,
     txt_path: Path = TXT_PATH,
     jpeg_quality: int | None = 80,
+    reading_order: str = "columns",
 ) -> Path:
     """OCR every page JPEG with Apple Vision and assemble a searchable PDF.
 
     Each page consists of the original JPEG plus an invisible text layer
     (PDF text-rendering mode 3) positioned at the bounding boxes returned
-    by VNRecognizeTextRequest. A plain-text sidecar with the row-aware
-    reading order of every page is also written to `txt_path`.
+    by VNRecognizeTextRequest. A plain-text sidecar of every page is
+    also written to `txt_path`.
 
     `jpeg_quality` re-encodes each page image at the given JPEG quality
     before embedding it (the source pages are stored at quality 95). Pass
     ``None`` to embed the original JPEG bytes unchanged.
+
+    `reading_order` controls how the sidecar text is stitched together:
+    ``"columns"`` reads each column top-to-bottom (best for the book's
+    flowing two-column directory pages); ``"rows"`` clusters fragments
+    by y and reads each row left-to-right (best for tabular layouts).
     """
+    if reading_order == "columns":
+        order_fn = ocr_av.columns_from_annots
+    elif reading_order == "rows":
+        order_fn = ocr_av.rows_from_annots
+    else:
+        raise ValueError(
+            f"reading_order must be 'columns' or 'rows', got {reading_order!r}"
+        )
     page_files = sorted(pages_dir.glob("page_*.jpg"))
     if not page_files:
         raise RuntimeError(f"No pages found in {pages_dir}")
@@ -160,7 +174,7 @@ def build_searchable_pdf(
             )
 
         txt_chunks.append(f"=== {page_file.name} ===")
-        txt_chunks.append(ocr_av.rows_from_annots(annots))
+        txt_chunks.append(order_fn(annots))
         txt_chunks.append("")
         print(f"OCR'd {page_file.name}: {len(annots)} fragments")
 

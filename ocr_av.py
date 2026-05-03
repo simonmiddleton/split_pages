@@ -73,12 +73,11 @@ def rows_from_annots(annots, *, row_tol: float = 0.012) -> str:
     return "\n".join(out_lines)
 
 
-def recognise_rows(jpeg_path: str | Path, *, row_tol: float = 0.012) -> str:
-    return rows_from_annots(annotate(jpeg_path), row_tol=row_tol)
-
-
-def recognise(jpeg_path: str | Path, *, gap: float = 0.10) -> str:
-    annots = annotate(jpeg_path)
+def columns_from_annots(annots, *, gap: float = 0.10) -> str:
+    """Column-aware reader: detect column boundaries by clustering x-centres
+    and read each column top-to-bottom. Best for flowing multi-column text
+    where each column is a continuation of reading order.
+    """
     if not annots:
         return ""
 
@@ -88,7 +87,7 @@ def recognise(jpeg_path: str | Path, *, gap: float = 0.10) -> str:
     col_centres = _cluster_columns(centres, gap=gap)
 
     rows = []
-    for text, conf, (x, y, w, h) in annots:
+    for text, _conf, (x, y, w, h) in annots:
         cx = x + w / 2
         col = _assign_column(cx, col_centres) if col_centres else 0
         # y is bottom-edge fraction with origin bottom-left — invert so larger
@@ -97,6 +96,14 @@ def recognise(jpeg_path: str | Path, *, gap: float = 0.10) -> str:
 
     rows.sort()
     return "\n".join(r[3] for r in rows)
+
+
+def recognise_rows(jpeg_path: str | Path, *, row_tol: float = 0.012) -> str:
+    return rows_from_annots(annotate(jpeg_path), row_tol=row_tol)
+
+
+def recognise(jpeg_path: str | Path, *, gap: float = 0.10) -> str:
+    return columns_from_annots(annotate(jpeg_path), gap=gap)
 
 
 if __name__ == "__main__":
