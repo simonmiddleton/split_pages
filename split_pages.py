@@ -264,13 +264,21 @@ def build_searchable_pdf(
         ordered, page_text = order(annots)
         # Insert the invisible text layer in the chosen reading order so the
         # PDF's text stream matches the sidecar.
+        # Helvetica font metrics (relative to em). Used to size and position
+        # each fragment so its selection box matches the Vision bbox: the
+        # bbox spans ascender-top to descender-bottom = (ASCENT+DESCENT) em,
+        # with the baseline DESCENT em above the bottom of the bbox.
+        HELV_ASCENT = 0.718
+        HELV_DESCENT = 0.207
         for text, _conf, (fx, fy, fw, fh) in ordered:
             # Apple Vision: fractional coords, origin bottom-left.
             # PyMuPDF page: points, origin top-left, y grows downward.
             x_left = fx * w
             box_h_pt = fh * h
-            baseline_y = (1.0 - fy) * h    # bottom of bbox ≈ text baseline
-            fontsize = max(box_h_pt * 0.85, 1.0)
+            fontsize = max(box_h_pt / (HELV_ASCENT + HELV_DESCENT), 1.0)
+            # `(1 - fy) * h` is the bottom of the Vision bbox in PDF coords;
+            # the baseline sits DESCENT em above that.
+            baseline_y = (1.0 - fy) * h - HELV_DESCENT * fontsize
             page.insert_text(
                 (x_left, baseline_y),
                 text,
@@ -297,7 +305,7 @@ def build_searchable_pdf(
 
 def main() -> None:
     scan_sections(SCANS_DIR)
-    build_searchable_pdf()
+    build_searchable_pdf(jpeg_quality=50)
 
 if __name__ == "__main__":
     main()
