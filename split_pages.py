@@ -301,7 +301,7 @@ def build_searchable_pdf(
             baseline_y = (1.0 - fy) * h - HELV_DESCENT * fontsize
             page.insert_text(
                 (x_left, baseline_y),
-                text,
+                text + ('' if text[-1] == '' else ' '),
                 fontname="helv",
                 fontsize=fontsize,
                 render_mode=3,             # invisible (searchable) text
