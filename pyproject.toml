@@ -3,6 +3,7 @@ name = "bookscans"
 version = "0.1.0"
 requires-python = ">=3.14"
 dependencies = [
+    "numpy>=2.4.4",
     "ocrmac>=1.0.1",
     "pillow>=12.2.0",
     "pymupdf>=1.27.2.3",
