@@ -44,58 +44,70 @@ def _assign_column(x_centre: float, col_centres: list[float]) -> int:
     return min(range(len(col_centres)), key=lambda i: abs(col_centres[i] - x_centre))
 
 
-def rows_from_annots(annots, *, row_tol: float = 0.012) -> str:
-    """Row-aware reader: cluster fragments by y into rows, then read each row
-    left-to-right. Best for tables / aligned multi-column data where each
-    physical row is meant to be read as one record.
+def sort_rows(annots, *, row_tol: float = 0.012):
+    """Group annots into top-to-bottom rows; each row is sorted left-to-right.
+
+    Returns ``list[list[annot]]``.
     """
     if not annots:
-        return ""
+        return []
 
-    items = [(text, x, y, w, h) for text, _conf, (x, y, w, h) in annots]
     # Sort by y descending (top of image first since origin is bottom-left).
-    items.sort(key=lambda it: -(it[2] + it[4]))
+    items = sorted(annots, key=lambda a: -(a[2][1] + a[2][3]))
 
-    rows: list[list[tuple[str, float, float, float, float]]] = []
-    for it in items:
-        y_top = it[2] + it[4]
-        if rows and abs((rows[-1][0][2] + rows[-1][0][4]) - y_top) < row_tol:
-            rows[-1].append(it)
+    rows: list[list] = []
+    for a in items:
+        y_top = a[2][1] + a[2][3]
+        if rows and abs((rows[-1][0][2][1] + rows[-1][0][2][3]) - y_top) < row_tol:
+            rows[-1].append(a)
         else:
-            rows.append([it])
+            rows.append([a])
 
-    out_lines: list[str] = []
     for row in rows:
-        row.sort(key=lambda it: it[1])  # left-to-right
-        # Pad gaps between cells with two spaces; tabs would be confusing in
-        # a plain-text comparison.
-        out_lines.append("  ".join(it[0] for it in row))
-    return "\n".join(out_lines)
+        row.sort(key=lambda a: a[2][0])
+    return rows
 
 
-def columns_from_annots(annots, *, gap: float = 0.10) -> str:
-    """Column-aware reader: detect column boundaries by clustering x-centres
-    and read each column top-to-bottom. Best for flowing multi-column text
-    where each column is a continuation of reading order.
+def sort_columns(annots, *, gap: float = 0.10):
+    """Sort annots into column-aware reading order: each column read
+    top-to-bottom in turn. Returns a flat ``list[annot]``.
     """
     if not annots:
-        return ""
+        return []
 
     # Use the centre x of each fragment, ignoring very short fragments (likely
     # noise like a stray punctuation mark) so column detection is stable.
     centres = [b[0] + b[2] / 2 for _, _, b in annots if b[2] > 0.02]
     col_centres = _cluster_columns(centres, gap=gap)
 
-    rows = []
-    for text, _conf, (x, y, w, h) in annots:
+    keyed = []
+    for a in annots:
+        x, y, w, h = a[2]
         cx = x + w / 2
         col = _assign_column(cx, col_centres) if col_centres else 0
         # y is bottom-edge fraction with origin bottom-left — invert so larger
         # values correspond to further down the page for natural sort order.
-        rows.append((col, -(y + h), x, text))
+        keyed.append(((col, -(y + h), x), a))
 
-    rows.sort()
-    return "\n".join(r[3] for r in rows)
+    keyed.sort(key=lambda kv: kv[0])
+    return [a for _, a in keyed]
+
+
+def rows_from_annots(annots, *, row_tol: float = 0.012) -> str:
+    """Row-aware text rendering: each row's fragments joined by two spaces,
+    rows joined by newlines. Best for tables / aligned multi-column data
+    where each physical row is meant to be read as one record.
+    """
+    rows = sort_rows(annots, row_tol=row_tol)
+    return "\n".join("  ".join(a[0] for a in row) for row in rows)
+
+
+def columns_from_annots(annots, *, gap: float = 0.10) -> str:
+    """Column-aware text rendering: each column read top-to-bottom in turn,
+    one fragment per line. Best for flowing multi-column text where each
+    column is a continuation of reading order.
+    """
+    return "\n".join(a[0] for a in sort_columns(annots, gap=gap))
 
 
 def recognise_rows(jpeg_path: str | Path, *, row_tol: float = 0.012) -> str:

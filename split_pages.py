@@ -224,9 +224,15 @@ def build_searchable_pdf(
     by y and reads each row left-to-right (best for tabular layouts).
     """
     if reading_order == "columns":
-        order_fn = ocr_av.columns_from_annots
+        def order(annots):
+            ordered = ocr_av.sort_columns(annots)
+            return ordered, "\n".join(a[0] for a in ordered)
     elif reading_order == "rows":
-        order_fn = ocr_av.rows_from_annots
+        def order(annots):
+            rows = ocr_av.sort_rows(annots)
+            ordered = [a for row in rows for a in row]
+            text = "\n".join("  ".join(a[0] for a in row) for row in rows)
+            return ordered, text
     else:
         raise ValueError(
             f"reading_order must be 'columns' or 'rows', got {reading_order!r}"
@@ -255,7 +261,10 @@ def build_searchable_pdf(
         page.insert_image(fitz.Rect(0, 0, w, h), stream=img_bytes)
 
         annots = ocr_av.annotate(page_file)
-        for text, _conf, (fx, fy, fw, fh) in annots:
+        ordered, page_text = order(annots)
+        # Insert the invisible text layer in the chosen reading order so the
+        # PDF's text stream matches the sidecar.
+        for text, _conf, (fx, fy, fw, fh) in ordered:
             # Apple Vision: fractional coords, origin bottom-left.
             # PyMuPDF page: points, origin top-left, y grows downward.
             x_left = fx * w
@@ -271,7 +280,7 @@ def build_searchable_pdf(
             )
 
         txt_chunks.append(f"=== {page_file.name} ===")
-        txt_chunks.append(order_fn(annots))
+        txt_chunks.append(page_text)
         txt_chunks.append("")
         print(f"OCR'd {page_file.name}: {len(annots)} fragments")
 
