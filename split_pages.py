@@ -60,6 +60,8 @@ import fitz  # PyMuPDF
 
 import ocr_av
 
+from itertools import groupby
+
 SCANS_DIR = Path("scans")
 OUT_DIR = Path("pages")
 PDF_PATH = Path("book.pdf")
@@ -210,28 +212,43 @@ def build_searchable_pdf(
     """OCR every page JPEG with Apple Vision and assemble a searchable PDF.
 
     Each page consists of the original JPEG plus an invisible text layer
-    (PDF text-rendering mode 3) positioned at the bounding boxes returned
-    by VNRecognizeTextRequest. A plain-text sidecar of every page is
-    also written to `txt_path`.
+    (PDF text-rendering mode 3) with one text run per WORD positioned
+    at its per-word bounding box (via Vision's
+    ``VNRecognizedText.boundingBoxForRange:``). A plain-text sidecar of
+    every page is also written to `txt_path`, with words regrouped back
+    into their parent Vision lines in the same reading order.
 
     `jpeg_quality` re-encodes each page image at the given JPEG quality
     before embedding it (the source pages are stored at quality 95). Pass
     ``None`` to embed the original JPEG bytes unchanged.
 
-    `reading_order` controls how the sidecar text is stitched together:
-    ``"columns"`` reads each column top-to-bottom (best for the book's
-    flowing two-column directory pages); ``"rows"`` clusters fragments
-    by y and reads each row left-to-right (best for tabular layouts).
+    `reading_order` controls how the sidecar text and the PDF text
+    stream are ordered: ``"columns"`` reads each column top-to-bottom
+    (best for the book's flowing two-column directory pages); ``"rows"``
+    clusters lines by y and reads each row left-to-right (best for
+    tabular layouts). Column / row clustering is done per LINE so words
+    from the same line stay together.
     """
     if reading_order == "columns":
         def order(annots):
-            ordered = ocr_av.sort_columns(annots)
-            return ordered, "\n".join(a[0] for a in ordered)
+            ordered = ocr_av.sort_columns_words(annots)
+            return ordered, ocr_av.join_word_lines(ordered)
     elif reading_order == "rows":
         def order(annots):
-            rows = ocr_av.sort_rows(annots)
+            rows = ocr_av.sort_rows_words(annots)
             ordered = [a for row in rows for a in row]
-            text = "\n".join("  ".join(a[0] for a in row) for row in rows)
+            # Within each row, words from the same Vision line are
+            # joined with a single space; lines within a row are
+            # separated by two spaces (preserving the previous tabular
+            # feel for pages where one visual row contains multiple
+            # logical fragments).
+            text = "\n".join(
+                "  ".join(
+                    " ".join(a[0] for a in grp)
+                    for _, grp in groupby(row, key=lambda a: a[3])
+                )
+                for row in rows
+            )
             return ordered, text
     else:
         raise ValueError(
@@ -260,17 +277,20 @@ def build_searchable_pdf(
         page = doc.new_page(width=w, height=h)
         page.insert_image(fitz.Rect(0, 0, w, h), stream=img_bytes)
 
-        annots = ocr_av.annotate(page_file)
+        annots = ocr_av.annotate_words(page_file)
         ordered, page_text = order(annots)
-        # Insert the invisible text layer in the chosen reading order so the
-        # PDF's text stream matches the sidecar.
-        # Helvetica font metrics (relative to em). Used to size and position
-        # each fragment so its selection box matches the Vision bbox: the
-        # bbox spans ascender-top to descender-bottom = (ASCENT+DESCENT) em,
-        # with the baseline DESCENT em above the bottom of the bbox.
+        # Insert one invisible text run per word, in the chosen reading
+        # order, so the PDF's text stream matches the sidecar.
+        # Helvetica font metrics (relative to em). Used to size and
+        # position each word so its selection box matches the Vision
+        # bbox: the bbox spans ascender-top to descender-bottom =
+        # (ASCENT+DESCENT) em, with the baseline DESCENT em above the
+        # bottom of the bbox.
         HELV_ASCENT = 0.718
         HELV_DESCENT = 0.207
-        for text, _conf, (fx, fy, fw, fh) in ordered:
+        for a in ordered:
+            text, _conf = a[0], a[1]
+            fx, fy, fw, fh = a[2]
             # Apple Vision: fractional coords, origin bottom-left.
             # PyMuPDF page: points, origin top-left, y grows downward.
             x_left = fx * w
@@ -290,7 +310,7 @@ def build_searchable_pdf(
         txt_chunks.append(f"=== {page_file.name} ===")
         txt_chunks.append(page_text)
         txt_chunks.append("")
-        print(f"OCR'd {page_file.name}: {len(annots)} fragments")
+        print(f"OCR'd {page_file.name}: {len(annots)} words")
 
     doc.save(str(pdf_path), deflate=True, garbage=4, clean=True)
     doc.close()

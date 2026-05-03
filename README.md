@@ -74,16 +74,28 @@ each page it:
 1. Re-encodes the JPEG at quality 80 (configurable via
    `jpeg_quality`) and embeds it into a new PDF page sized in PDF
    points to match the JPEG's pixel dimensions (1pt = 1px).
-2. Runs Apple Vision (`ocrmac.OCR(..., recognition_level="accurate")`)
-   to get a list of `(text, confidence, [x, y, w, h])` fragments with
-   fractional, bottom-left origin coordinates.
-3. Sorts those fragments according to `reading_order`
-   (`"columns"` by default, or `"rows"`).
-4. Inserts each fragment as **invisible text** (PDF text-rendering
-   mode 3) at its bounding box on the PDF page — this is what makes the
-   PDF searchable while leaving the visible JPEG untouched.
-5. Joins the same sorted fragments into the `book.txt` sidecar so the
-   plain text and the PDF text stream are produced in the same order.
+2. Runs Apple Vision via `ocr_av.annotate_words` to get a list of
+   per-**word** annotations
+   `(text, confidence, [x, y, w, h], line_id)` with fractional,
+   bottom-left origin coordinates. Vision returns line-level
+   observations; per-word bounding boxes come from
+   `VNRecognizedText.boundingBoxForRange:error:`, called via pyobjc
+   (`ocrmac` only exposes line bboxes). `line_id` is the index of the
+   parent Vision line so the sidecar can regroup words back into lines.
+3. Sorts those word annots according to `reading_order` using the
+   word-aware variants `sort_columns_words` / `sort_rows_words`. These
+   compute the column / row clustering on each line's union bbox so
+   words from the same line stay together; words within a line keep
+   their natural left-to-right order.
+4. Inserts each **word** as its own **invisible text run** (PDF
+   text-rendering mode 3) at its own bounding box on the PDF page.
+   This is what makes the PDF searchable; because the box is per-word,
+   selection highlights and copy-of-partial-line selections in
+   Preview/Acrobat hug individual words rather than spanning the whole
+   line.
+5. Joins the same sorted words back into lines (via `ocr_av.join_word_lines`)
+   in the `book.txt` sidecar so the plain text and the PDF text stream
+   are produced in the same order.
 
 Two reading-order strategies are exposed via `ocr_av.py`:
 
@@ -163,7 +175,7 @@ There are three ways to resolve this. They each cost something:
 
 | Approach                                                    | Search highlight on visible word | Preview/Acrobat copy order |
 |-------------------------------------------------------------|----------------------------------|----------------------------|
-| **Current** (text positioned per-fragment, in reading order) | ✅                                | ❌ (interleaved)            |
+| **Current** (text positioned per-word, in reading order)     | ✅                                | ❌ (interleaved)            |
 | **Linearised layout** (text stacked vertically by reading rank) | ❌ (highlights at synthetic y)    | ✅ (clean)                  |
 | **Tagged PDF** with `/StructTreeRoot`                        | ✅                                | ❌ (Preview/Acrobat ignore tags for ordinary copy — tags are for accessibility/reflow) |
 
