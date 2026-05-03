@@ -1,28 +1,53 @@
 #!/usr/bin/env python3
-"""Rotate, split and reorder a section of disassembled book scans.
+"""Rebuild the book from its disassembled scans.
 
-The `scans/` directory contains 12 JPEGs (`Scan.jpeg`, `Scan 1.jpeg` … `Scan 11.jpeg`).
-Each scan is portrait, with two book pages stacked top-to-bottom and the text
-rotated 90° counter-clockwise (so the image must be rotated 90° clockwise to
-read it).
+End-to-end pipeline:
 
-The scans are of one folded signature of 12 leaves (24 pages, numbered
-iii–xxvi). For scan index k (0-based) the top page is the lower-numbered page
-(k + 3) and the bottom page is the higher-numbered one (26 − k).
+  1. **Split** every scanned signature in `scans/` into single pages
+     (`scan_sections` → `scan_section`).
+  2. **OCR** each page with Apple Vision and **build a searchable PDF**
+     plus a plain-text sidecar (`build_searchable_pdf`).
+
+Layout of the source material
+-----------------------------
+The book was disassembled into folded signatures, each scanned as a
+sequence of JPEGs (`Scan.jpeg`, `Scan 1.jpeg`, …) inside its own
+sub-directory of `scans/` (`section 01`, `section 02`, …). For each
+section, every JPEG is portrait with **two book pages stacked
+top-to-bottom** and the text running sideways.
+
+For scan index *k* (0-based) within a section of *N* scans, the top page
+is the lower-numbered page (`first_page + k`) and the bottom page is the
+higher-numbered one (`first_page + 2N − 1 − k`).
 
 Even-indexed scans (outer faces of each folded sheet) were placed on the
 scanner rotated 90° counter-clockwise, so they need to be rotated 90°
 clockwise to read. Odd-indexed scans (inner faces, where the sheet was
-flipped over) were placed rotated 90° clockwise, so they need to be rotated
-90° counter-clockwise. After the appropriate rotation, the original "top"
-page is the lower-numbered page; for even scans it ends up on the right of
-the rotated image and for odd scans on the left.
+flipped over) were placed rotated 90° clockwise, so they need to be
+rotated 90° counter-clockwise. After the appropriate rotation, the
+original "top" page is the lower-numbered page; for even scans it ends
+up on the right of the rotated image and for odd scans on the left.
 
-Each scan also has a ~130-pixel-tall scanner artifact along its bottom edge.
-This strip is cropped from the source image before rotation and splitting so
-that the two halves are equal width and contain full page content.
+Pre-processing per scan
+-----------------------
+Each scan also has a ~230-pixel-tall scanner artifact along its bottom
+edge (`BOTTOM_CROP`). This strip is cropped before rotation so the two
+halves are equal width and contain full page content.
 
-Output: `pages/page_03.jpg` … `pages/page_26.jpg`, in reading order.
+Pages were never placed perfectly square on the scanner, so after the
+90° rotation each scan is **deskewed** with a small horizontal-projection
+variance search (`estimate_skew` / `deskew`) before being split into
+left/right halves.
+
+Some sections also contain post-processed JPEGs (`*.jpg`) that are
+already single pages — these are appended verbatim to the page sequence
+after the split scans.
+
+Output
+------
+* `pages/page_NNN.jpg` — single-page JPEGs in reading order
+* `book.pdf` — searchable PDF (image + invisible Apple Vision text layer)
+* `book.txt` — plain-text sidecar in column-aware reading order
 """
 
 from pathlib import Path
