@@ -26,15 +26,18 @@ Output: `pages/page_03.jpg` … `pages/page_26.jpg`, in reading order.
 """
 
 from pathlib import Path
+import io
 import shutil
 
 from PIL import Image
-import ocrmypdf
+import fitz  # PyMuPDF
+
+import ocr_av
 
 SCANS_DIR = Path("scans")
 OUT_DIR = Path("pages")
 PDF_PATH = Path("book.pdf")
-OCR_PDF_PATH = Path("book_ocr.pdf")
+TXT_PATH = Path("book.txt")
 BOTTOM_CROP = 230       # pixels to trim off the bottom of each source scan
 
 XTRIM = 60
@@ -100,38 +103,81 @@ def scan_sections(sections_path):
     for section in sorted(list(sections_path.iterdir())):
         first_page = scan_section(section, first_page)
 
-def assemble_pdf(pages_dir: Path = OUT_DIR, pdf_path: Path = PDF_PATH) -> Path:
-    """Combine every JPEG in `pages_dir` (sorted by name) into a single PDF."""
+def build_searchable_pdf(
+    pages_dir: Path = OUT_DIR,
+    pdf_path: Path = PDF_PATH,
+    txt_path: Path = TXT_PATH,
+    jpeg_quality: int | None = 80,
+) -> Path:
+    """OCR every page JPEG with Apple Vision and assemble a searchable PDF.
+
+    Each page consists of the original JPEG plus an invisible text layer
+    (PDF text-rendering mode 3) positioned at the bounding boxes returned
+    by VNRecognizeTextRequest. A plain-text sidecar with the row-aware
+    reading order of every page is also written to `txt_path`.
+
+    `jpeg_quality` re-encodes each page image at the given JPEG quality
+    before embedding it (the source pages are stored at quality 95). Pass
+    ``None`` to embed the original JPEG bytes unchanged.
+    """
     page_files = sorted(pages_dir.glob("page_*.jpg"))
     if not page_files:
         raise RuntimeError(f"No pages found in {pages_dir}")
 
-    images = [Image.open(p).convert("RGB") for p in page_files]
-    first, rest = images[0], images[1:]
-    first.save(pdf_path, "PDF", save_all=True, append_images=rest)
-    for img in images:
-        img.close()
+    doc = fitz.open()
+    txt_chunks: list[str] = []
 
-    print(f"Wrote {pdf_path} ({len(page_files)} pages)")
+    for page_file in page_files:
+        with Image.open(page_file) as img:
+            w, h = img.size
+            if jpeg_quality is None:
+                img_bytes = page_file.read_bytes()
+            else:
+                buf = io.BytesIO()
+                img.convert("RGB").save(
+                    buf, "JPEG", quality=jpeg_quality, optimize=True
+                )
+                img_bytes = buf.getvalue()
+
+        # 1pt = 1px so PDF page dimensions match the source image.
+        page = doc.new_page(width=w, height=h)
+        page.insert_image(fitz.Rect(0, 0, w, h), stream=img_bytes)
+
+        annots = ocr_av.annotate(page_file)
+        for text, _conf, (fx, fy, fw, fh) in annots:
+            # Apple Vision: fractional coords, origin bottom-left.
+            # PyMuPDF page: points, origin top-left, y grows downward.
+            x_left = fx * w
+            box_h_pt = fh * h
+            baseline_y = (1.0 - fy) * h    # bottom of bbox ≈ text baseline
+            fontsize = max(box_h_pt * 0.85, 1.0)
+            page.insert_text(
+                (x_left, baseline_y),
+                text,
+                fontname="helv",
+                fontsize=fontsize,
+                render_mode=3,             # invisible (searchable) text
+            )
+
+        txt_chunks.append(f"=== {page_file.name} ===")
+        txt_chunks.append(ocr_av.rows_from_annots(annots))
+        txt_chunks.append("")
+        print(f"OCR'd {page_file.name}: {len(annots)} fragments")
+
+    doc.save(str(pdf_path), deflate=True, garbage=4, clean=True)
+    doc.close()
+
+    txt_path.write_text("\n".join(txt_chunks), encoding="utf-8")
+
+    print(f"Wrote {pdf_path} ({len(page_files)} pages, "
+          f"{pdf_path.stat().st_size / 1e6:.1f} MB)")
+    print(f"Wrote {txt_path} ({txt_path.stat().st_size / 1e3:.0f} KB)")
     return pdf_path
 
-def ocr_pdf(pdf_path: Path = PDF_PATH, out_path: Path = OCR_PDF_PATH) -> Path:
-    """Run OCR over `pdf_path`, producing a searchable PDF at `out_path`."""
-    ocrmypdf.ocr(
-        pdf_path,
-        out_path,
-        language="eng",
-        deskew=True,
-        progress_bar=False,
-        optimize=3
-    )
-    print(f"Wrote OCR'd PDF to {out_path}")
-    return out_path
 
 def main() -> None:
     scan_sections(SCANS_DIR)
-    assemble_pdf()
-    ocr_pdf()
+    build_searchable_pdf()
 
 if __name__ == "__main__":
     main()

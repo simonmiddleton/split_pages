@@ -6,3 +6,7 @@ __pycache__/
 # Image data — not checked in
 scans/
 pages/
+
+# Built artefacts
+*.pdf
+ocr_bench/
