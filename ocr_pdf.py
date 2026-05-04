@@ -14,10 +14,16 @@ from add_toc import fix_digits
 # up entirely of these (plus real digits) is treated as a number and passed
 # through fix_digits; ordinary words are left untouched.
 _NUMBER_LIKE = re.compile(r'^[0-9IloоОб]+$')  # I=capital i, l=lowercase L, o=latin o, о/О=cyrillic o, б=cyrillic б
+# Splits a token into optional leading punctuation, an alphanumeric core, and
+# optional trailing punctuation — e.g. "(I2," → ("(", "I2", ",").
+_WORD_RE = re.compile(r'^(\W*)(\w+)(\W*)$')
 
 
 def _fix_word(w: str) -> str:
-    return fix_digits(w) if _NUMBER_LIKE.match(w) else w
+    m = _WORD_RE.fullmatch(w)
+    if m and _NUMBER_LIKE.match(m.group(2)):
+        return m.group(1) + fix_digits(m.group(2)) + m.group(3)
+    return w
 
 OUT_DIR  = Path("pages")
 PDF_PATH = Path("book.pdf")
