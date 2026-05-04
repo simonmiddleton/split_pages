@@ -136,18 +136,25 @@ def _count_places_entries(page: fitz.Page) -> int:
     count = 0
     for col in column_lines(page):
         pending: str | None = None
+        family_prefix: str | None = None
         for raw in col:
             line = raw.strip()
             if not line or _SEPARATOR.match(line):
                 continue
             if _HEADER.match(line):
                 pending = None
+                family_prefix = None
                 continue
             prefix, nums = trailing_nums(line)
             if nums:
                 name = prefix if prefix else pending
-                if name and re.match(r'^[A-Z][a-zA-Z]', name.rstrip('.,•· ')):
-                    count += 1
+                if name:
+                    name = name.rstrip('.,•· ')
+                    if re.match(r'^[A-Z][a-zA-Z]', name):
+                        count += 1
+                        family_prefix = name.split()[0]
+                    elif family_prefix and pending is None and re.match(r'^[a-z][a-zA-Z]', name):
+                        count += 1
                 pending = None
             elif re.match(r'^[A-Z][a-zA-Z]', line) and not re.search(r'\d', line):
                 pending = line.rstrip('.,•· ')
@@ -229,6 +236,7 @@ def parse_places(doc: fitz.Document, pages: list[int]) -> dict[str, int]:
         page = doc[pnum - 1]   # fitz uses 0-based indexing
         for col in column_lines(page):
             pending: str | None = None
+            family_prefix: str | None = None
 
             for raw in col:
                 line = raw.strip()
@@ -240,6 +248,7 @@ def parse_places(doc: fitz.Document, pages: list[int]) -> dict[str, int]:
 
                 if _HEADER.match(line):
                     pending = None
+                    family_prefix = None
                     continue
 
                 prefix, nums = trailing_nums(line)
@@ -250,6 +259,9 @@ def parse_places(doc: fitz.Document, pages: list[int]) -> dict[str, int]:
                         name = name.rstrip('.,•· ')
                         if re.match(r'^[A-Z][a-zA-Z]', name):
                             entries.setdefault(name, nums[0])
+                            family_prefix = name.split()[0]
+                        elif family_prefix and pending is None and re.match(r'^[a-z][a-zA-Z]', name):
+                            entries.setdefault(f'{family_prefix} {name}', nums[0])
                     pending = None
 
                 elif re.match(r'^[A-Z][a-zA-Z]', line) and not re.search(r'\d', line):
