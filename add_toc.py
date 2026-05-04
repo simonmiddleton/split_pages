@@ -30,14 +30,13 @@ _MIN_PLACES_ENTRIES = 10   # pages with fewer entries are not Index to Places
 
 def fix_digits(s: str) -> str:
     """Repair common OCR digit-substitutions in a page-number string."""
-    s = re.sub(r'\bI(?=\d)', '1', s)    # I76  → 176
-    s = re.sub(r'(?<=\d)I\b', '1', s)   # 15I  → 151
-    s = re.sub(r'\bI\b', '1', s)        # lone I → 1
     return (s
+            .replace('I', '1')
+            .replace('l', '1')
             .replace('б', '6')
+            .replace('o', '0')
             .replace('о', '0')
-            .replace('О', '0')
-            .replace('l', '1'))
+            .replace('О', '0'))
 
 
 def parse_nums(s: str) -> list[int]:

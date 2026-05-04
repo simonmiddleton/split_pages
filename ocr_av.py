@@ -90,7 +90,7 @@ def annotate_words(jpeg_path: str | Path):
     return out
 
 
-def join_word_lines(annots) -> str:
+def join_word_lines(annots, *, row_tol: float | None = None) -> str:
     """Regroup per-word annots back into lines for sidecar text.
 
     Walks ``annots`` (already in reading order) and joins consecutive
@@ -98,17 +98,31 @@ def join_word_lines(annots) -> str:
     are separated by ``\\n``. Falls back to one fragment per line for
     annots without a line_id (i.e. the line-level shape from
     ``annotate``).
+
+    If ``row_tol`` is set, consecutive words from *different* Vision
+    lines whose y_top values are within ``row_tol`` of each other are
+    kept on the same text line (correcting cases where a house number
+    bbox sits slightly lower than the name on the same visual row).
     """
     lines: list[str] = []
     current: list[str] = []
     current_id: object = object()  # sentinel — first word starts a new line
+    prev_y_top: float | None = None
     for a in annots:
         line_id = a[3] if len(a) > 3 else id(a)  # unique → no grouping
-        if line_id != current_id and current:
+        y_top = (a[2][1] + a[2][3]) if len(a) > 2 else None
+        new_line = line_id != current_id
+        if (new_line and row_tol is not None
+                and y_top is not None and prev_y_top is not None
+                and abs(y_top - prev_y_top) < row_tol):
+            new_line = False
+        if new_line and current:
             lines.append(" ".join(current))
             current = []
         current.append(a[0])
         current_id = line_id
+        if y_top is not None:
+            prev_y_top = y_top
     if current:
         lines.append(" ".join(current))
     return "\n".join(lines)
@@ -152,7 +166,7 @@ def _line_bbox(words):
     return [x, y, max(rs) - x, max(ts) - y]
 
 
-def sort_columns_words(word_annots, *, gap: float = 0.10):
+def sort_columns_words(word_annots, *, gap: float = 0.10, row_tol: float = 0.012):
     """Column-aware reading order over word-level annots.
 
     Column assignment is done per LINE (using each line's union bbox)
@@ -170,7 +184,7 @@ def sort_columns_words(word_annots, *, gap: float = 0.10):
     ]
     by_lid = {lid: words for lid, words in groups}
     out = []
-    for la in sort_columns(line_annots, gap=gap):
+    for la in sort_columns(line_annots, gap=gap, row_tol=row_tol):
         out.extend(by_lid[la[3]])
     return out
 
@@ -224,7 +238,7 @@ def sort_rows(annots, *, row_tol: float = 0.012):
     return rows
 
 
-def sort_columns(annots, *, gap: float = 0.10):
+def sort_columns(annots, *, gap: float = 0.10, row_tol: float = 0.012):
     """Sort annots into column-aware reading order: each column read
     top-to-bottom in turn. Returns a flat ``list[annot]``.
     """
@@ -241,12 +255,32 @@ def sort_columns(annots, *, gap: float = 0.10):
         x, y, w, h = a[2]
         cx = x + w / 2
         col = _assign_column(cx, col_centres) if col_centres else 0
-        # y is bottom-edge fraction with origin bottom-left — invert so larger
-        # values correspond to further down the page for natural sort order.
-        keyed.append(((col, -(y + h), x), a))
+        keyed.append((col, y + h, x, a))
 
-    keyed.sort(key=lambda kv: kv[0])
-    return [a for _, a in keyed]
+    # Primary sort: column, then y_top descending (top of page first), then x.
+    keyed.sort(key=lambda t: (t[0], -t[1], t[2]))
+
+    # Row-snapping pass: within consecutive same-column elements whose y_top
+    # values are within row_tol of the group anchor, re-sort by x.  This
+    # corrects cases where a house-number bbox sits slightly lower than the
+    # name on the same visual line, which would otherwise sort it after the
+    # name instead of before it.
+    result = []
+    i = 0
+    while i < len(keyed):
+        col0, y_top0, _, _ = keyed[i]
+        group = [keyed[i]]
+        j = i + 1
+        while (j < len(keyed)
+               and keyed[j][0] == col0
+               and abs(keyed[j][1] - y_top0) < row_tol):
+            group.append(keyed[j])
+            j += 1
+        group.sort(key=lambda t: t[2])  # left-to-right within the row
+        result.extend(t[3] for t in group)
+        i = j
+
+    return result
 
 
 def rows_from_annots(annots, *, row_tol: float = 0.012) -> str:

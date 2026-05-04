@@ -5,7 +5,19 @@ from itertools import groupby
 from PIL import Image
 import fitz  # PyMuPDF
 
+import re
+
 import ocr_av
+from add_toc import fix_digits
+
+# Characters that Vision commonly returns instead of digits.  A token made
+# up entirely of these (plus real digits) is treated as a number and passed
+# through fix_digits; ordinary words are left untouched.
+_NUMBER_LIKE = re.compile(r'^[0-9IloоОб]+$')  # I=capital i, l=lowercase L, o=latin o, о/О=cyrillic o, б=cyrillic б
+
+
+def _fix_word(w: str) -> str:
+    return fix_digits(w) if _NUMBER_LIKE.match(w) else w
 
 OUT_DIR  = Path("pages")
 PDF_PATH = Path("book.pdf")
@@ -42,7 +54,7 @@ def build_searchable_pdf(
     if reading_order == "columns":
         def order(annots):
             ordered = ocr_av.sort_columns_words(annots)
-            return ordered, ocr_av.join_word_lines(ordered)
+            return ordered, ocr_av.join_word_lines(ordered, row_tol=0.012)
     elif reading_order == "rows":
         def order(annots):
             rows = ocr_av.sort_rows_words(annots)
@@ -88,6 +100,7 @@ def build_searchable_pdf(
         page.insert_image(fitz.Rect(0, 0, w, h), stream=img_bytes)
 
         annots = ocr_av.annotate_words(page_file)
+        annots = [(_fix_word(a[0]),) + a[1:] for a in annots]
         ordered, page_text = order(annots)
         # Insert one invisible text run per word, in the chosen reading
         # order, so the PDF's text stream matches the sidecar.
