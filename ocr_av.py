@@ -128,7 +128,7 @@ def join_word_lines(annots, *, row_tol: float | None = None) -> str:
     return "\n".join(lines)
 
 
-def _cluster_columns(centres: list[float], gap: float = 0.10) -> list[float]:
+def _cluster_columns(centres: list[float], gap: float = 0.06) -> list[float]:
     """Return sorted column-centre estimates by 1-D clustering of x-centres.
 
     `gap` is the minimum normalised distance between adjacent column centres.
@@ -166,7 +166,7 @@ def _line_bbox(words):
     return [x, y, max(rs) - x, max(ts) - y]
 
 
-def sort_columns_words(word_annots, *, gap: float = 0.10, row_tol: float = 0.012):
+def sort_columns_words(word_annots, *, gap: float = 0.06, row_tol: float = 0.012):
     """Column-aware reading order over word-level annots.
 
     Column assignment is done per LINE (using each line's union bbox)
@@ -238,7 +238,7 @@ def sort_rows(annots, *, row_tol: float = 0.012):
     return rows
 
 
-def sort_columns(annots, *, gap: float = 0.10, row_tol: float = 0.012):
+def sort_columns(annots, *, gap: float = 0.06, row_tol: float = 0.012):
     """Sort annots into column-aware reading order: each column read
     top-to-bottom in turn. Returns a flat ``list[annot]``.
     """
@@ -292,7 +292,7 @@ def rows_from_annots(annots, *, row_tol: float = 0.012) -> str:
     return "\n".join("  ".join(a[0] for a in row) for row in rows)
 
 
-def columns_from_annots(annots, *, gap: float = 0.10) -> str:
+def columns_from_annots(annots, *, gap: float = 0.06) -> str:
     """Column-aware text rendering: each column read top-to-bottom in turn,
     one fragment per line. Best for flowing multi-column text where each
     column is a continuation of reading order.
@@ -304,7 +304,7 @@ def recognise_rows(jpeg_path: str | Path, *, row_tol: float = 0.012) -> str:
     return rows_from_annots(annotate(jpeg_path), row_tol=row_tol)
 
 
-def recognise(jpeg_path: str | Path, *, gap: float = 0.10) -> str:
+def recognise(jpeg_path: str | Path, *, gap: float = 0.06) -> str:
     return columns_from_annots(annotate(jpeg_path), gap=gap)
 
 
