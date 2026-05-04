@@ -5,24 +5,48 @@ Tooling that reassembles a disassembled cased-bound book — a copy of
 folded signatures into a clean, searchable PDF and a plain-text
 sidecar.
 
-## Pipeline
+## Usage
 
-The whole flow lives in [`split_pages.py`](split_pages.py) and runs in
-two stages:
-
-1. **`scan_sections` → `scan_section`** — turn each scanned signature
-   in `scans/section NN/` into single-page JPEGs in `pages/`.
-2. **`build_searchable_pdf`** — OCR every page with Apple Vision and
-   produce a searchable [`book.pdf`](#outputs) plus a row- or
-   column-ordered [`book.txt`](#outputs) sidecar.
-
-Run end-to-end:
+`split_pages.py` is the CLI entry point. It has four subcommands:
 
 ```bash
-uv run python split_pages.py
+uv run python split_pages.py all         # run everything: images → ocr → toc
+uv run python split_pages.py images      # split and deskew scans → pages/
+uv run python split_pages.py ocr         # OCR pages/ → book.pdf + book.txt
+uv run python split_pages.py toc         # add bookmarks → book_toc.pdf
 ```
 
-### 1. Splitting and de-skewing scans
+Every argument has a sensible default; pass `--help` to any subcommand
+to see them:
+
+```bash
+uv run python split_pages.py images --help
+```
+
+Common overrides:
+
+```bash
+# Use a different output directory and lower JPEG quality
+uv run python split_pages.py all --pages-dir out --jpeg-quality 70
+
+# Re-run OCR only, with row-order reading
+uv run python split_pages.py ocr --reading-order rows
+```
+
+## Pipeline
+
+The pipeline has three stages, each with its own module:
+
+1. **`image_processing.py`** — `scan_sections` / `scan_section`: turn
+   each scanned signature in `scans/section NN/` into single-page JPEGs
+   in `pages/`.
+2. **`ocr_pdf.py`** — `build_searchable_pdf`: OCR every page with Apple
+   Vision and produce a searchable [`book.pdf`](#outputs) plus a row- or
+   column-ordered [`book.txt`](#outputs) sidecar.
+3. **`add_toc.py`** — parse the embedded index to discover section
+   offsets and embed PDF bookmarks into `book_toc.pdf`.
+
+### 1. Splitting and deskewing scans (`images`)
 
 Each section is a folded signature. Every JPEG inside it is portrait,
 contains two book pages stacked top-to-bottom, and has its text running
@@ -43,10 +67,10 @@ rotation.
 After the appropriate 90° rotation, three further fixes are applied
 before the scan is split into two halves:
 
-* **Bottom artefact crop** — `BOTTOM_CROP = 230` pixels are trimmed off
+* **Bottom artefact crop** — `--bottom-crop 230` pixels are trimmed off
   the bottom of the source scan to remove a flatbed scanner artefact
   along the platen edge.
-* **De-skew** — pages were never placed perfectly square. `estimate_skew`
+* **Deskew** — pages were never placed perfectly square. `estimate_skew`
   does a coarse 0.5° sweep across ±3°, then a 0.05° fine sweep around
   the best candidate, scoring each angle by the variance of the
   horizontal pixel-sum projection (text rows align ⇒ sums alternate
@@ -55,7 +79,7 @@ before the scan is split into two halves:
   without good horizontal text structure (e.g. the fold-out map with
   diagonal street labels), so those pages are left unrotated rather
   than spuriously skewed by several degrees.
-* **Edge trim** — `XTRIM = 60` pixels are dropped from the inner gutter
+* **Edge trim** — `--xtrim 60` pixels are dropped from the inner gutter
   on the split, removing residual binding shadow.
 
 The `lo`/`hi` halves of the rotated scan are saved as
@@ -66,13 +90,13 @@ section are appended verbatim, in sorted order, to the page sequence —
 this lets you drop a manually-fixed page into the section and have it
 slot in automatically.
 
-### 2. OCR and searchable-PDF assembly
+### 2. OCR and searchable-PDF assembly (`ocr`)
 
 `build_searchable_pdf` walks `pages/page_*.jpg` in sorted order. For
 each page it:
 
-1. Re-encodes the JPEG at quality 80 (configurable via
-   `jpeg_quality`) and embeds it into a new PDF page sized in PDF
+1. Re-encodes the JPEG at quality 50 (override with `--jpeg-quality`)
+   and embeds it into a new PDF page sized in PDF
    points to match the JPEG's pixel dimensions (1pt = 1px).
 2. Runs Apple Vision via `ocr_av.annotate_words` to get a list of
    per-**word** annotations
@@ -199,16 +223,20 @@ appear at synthetic positions.
 ## Repository layout
 
 ```
-split_pages.py     # main pipeline (scan → split → deskew → OCR → searchable PDF + txt)
-ocr_av.py          # Apple Vision wrapper + column/row sort helpers
-ocr_bench.py       # benchmarking harness (Tesseract vs Apple Vision)
-ocr_bench/         # benchmark output (gitignored)
-pyproject.toml     # uv-managed project (Python ≥ 3.14)
+split_pages.py       # CLI entry point (argparse subcommands: images/ocr/toc/all)
+image_processing.py  # scan_sections / scan_section / estimate_skew / deskew
+ocr_pdf.py           # build_searchable_pdf
+add_toc.py           # PDF bookmark builder (parses embedded index)
+ocr_av.py            # Apple Vision wrapper + column/row sort helpers
+ocr_bench.py         # benchmarking harness (Tesseract vs Apple Vision)
+ocr_bench/           # benchmark output (gitignored)
+pyproject.toml       # uv-managed project (Python ≥ 3.14)
 uv.lock
-scans/             # source scans (gitignored)
-pages/             # split single-page JPEGs (gitignored)
-book.pdf           # searchable output (gitignored)
-book.txt           # sidecar text
+scans/               # source scans (gitignored)
+pages/               # split single-page JPEGs (gitignored)
+book.pdf             # searchable output (gitignored)
+book_toc.pdf         # searchable output with TOC bookmarks (gitignored)
+book.txt             # sidecar text
 ```
 
 ## Dependencies
