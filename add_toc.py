@@ -34,6 +34,7 @@ def fix_digits(s: str) -> str:
             .replace('I', '1')
             .replace('l', '1')
             .replace('б', '6')
+            .replace('O', '0')
             .replace('o', '0')
             .replace('о', '0')
             .replace('О', '0'))

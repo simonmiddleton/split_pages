@@ -13,16 +13,20 @@ from add_toc import fix_digits
 # Characters that Vision commonly returns instead of digits.  A token made
 # up entirely of these (plus real digits) is treated as a number and passed
 # through fix_digits; ordinary words are left untouched.
-_NUMBER_LIKE = re.compile(r'^[0-9IloоОб]+$')  # I=capital i, l=lowercase L, o=latin o, о/О=cyrillic o, б=cyrillic б
-# Splits a token into optional leading punctuation, an alphanumeric core, and
+_NUMBER_LIKE = re.compile(r'^[0-9IlOoоОб]+$')  # I=capital I, l=lowercase L, O/o=latin O/o, о/О=cyrillic o, б=cyrillic б
+# Splits a token into optional leading punctuation, an alphanumeric core
+# (word chars, allowing interior hyphens for ranges like "101-103"), and
 # optional trailing punctuation — e.g. "(I2," → ("(", "I2", ",").
-_WORD_RE = re.compile(r'^(\W*)(\w+)(\W*)$')
+_WORD_RE = re.compile(r'^(\W*)(\w(?:[\w-]*\w)?)(\W*)$')
 
 
 def _fix_word(w: str) -> str:
     m = _WORD_RE.fullmatch(w)
-    if m and _NUMBER_LIKE.match(m.group(2)):
-        return m.group(1) + fix_digits(m.group(2)) + m.group(3)
+    if m:
+        parts = m.group(2).split('-')
+        if all(_NUMBER_LIKE.match(p) for p in parts):
+            fixed = '-'.join(fix_digits(p) for p in parts)
+            return m.group(1) + fixed + m.group(3)
     return w
 
 OUT_DIR  = Path("pages")
