@@ -86,7 +86,7 @@ def build_searchable_pdf(
         raise ValueError(
             f"reading_order must be 'columns' or 'rows', got {reading_order!r}"
         )
-    page_files = sorted(pages_dir.glob("page_*.jpg"))
+    page_files = sorted(pages_dir.glob("*.jpg"))
     if not page_files:
         raise RuntimeError(f"No pages found in {pages_dir}")
 
