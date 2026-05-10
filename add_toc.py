@@ -31,6 +31,8 @@ _MIN_PLACES_ENTRIES = 10   # pages with fewer entries are not Index to Places
 def fix_digits(s: str) -> str:
     """Repair common OCR digit-substitutions in a page-number string."""
     return (s
+            .replace('X', '1')
+            .replace('x', '1')
             .replace('I', '1')
             .replace('l', '1')
             .replace('б', '6')
@@ -184,9 +186,9 @@ def discover_sections(doc: fitz.Document) -> dict[str, int]:
             break
         pdf_page = i + 1
         text = page.get_text()
-        head = text[:100]   # page opening — used for section-start detection
+        head = text[:200]   # page opening — used for section-start detection
 
-        if 'general_index' in needed and re.search(r'GENERAL\s*\nINDEX', text, re.I):
+        if 'general_index' in needed and re.search(r'GENERAL\s*INDEX', text, re.I):
             sections['general_index'] = pdf_page
             needed.discard('general_index')
 
