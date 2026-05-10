@@ -34,6 +34,7 @@ def fix_digits(s: str) -> str:
             .replace('X', '1')
             .replace('x', '1')
             .replace('I', '1')
+            .replace('i', '1')
             .replace('l', '1')
             .replace('б', '6')
             .replace('O', '0')
@@ -47,14 +48,36 @@ def parse_nums(s: str) -> list[int]:
 
     Commas separate genuinely distinct page numbers; spaces within a
     comma-group are OCR artefacts (e.g. 'I 39' = 139, '1 52,257' = 152,257).
+    When joining space-separated tokens produces a number > 500 (e.g. a trailing
+    column-marker digit like '206 I' → 2061), fall back to each token individually.
     """
     fixed = fix_digits(s)
     result = []
     for part in re.split(r',', fixed):
-        joined = ''.join(re.split(r'\s+', part.strip()))
-        if re.fullmatch(r'\d+', joined) and 1 <= int(joined) <= 500:
-            result.append(int(joined))
+        tokens = [t for t in re.split(r'\s+', part.strip()) if t]
+        joined = ''.join(tokens)
+        if not re.fullmatch(r'\d+', joined):
+            continue
+        n = int(joined)
+        if 1 <= n <= 500:
+            result.append(n)
+        elif len(tokens) > 1:
+            # Joined too large — trailing digit-sub marker; try each token separately.
+            for tok in tokens:
+                if re.fullmatch(r'\d+', tok) and 1 <= int(tok) <= 500:
+                    result.append(int(tok))
+        elif len(joined) >= 4:
+            # Single 4-digit token too large — last digit is likely OCR junk; truncate.
+            truncated = joined[:-1]
+            if 1 <= int(truncated) <= 500:
+                result.append(int(truncated))
     return result
+
+
+_TRAILING_NUM_RE = re.compile(
+    r'(?<!\w)([0-9IliOoоОбXx]+(?:[,\s]+[0-9IliOoоОбXx]+)*)(?:\s*\S+){0,3}$'
+)
+_SEP_TRAIL_RE = re.compile(r'[\s.•·]+$')
 
 
 def trailing_nums(line: str) -> tuple[str, list[int]]:
@@ -65,18 +88,29 @@ def trailing_nums(line: str) -> tuple[str, list[int]]:
       "Street name ... 42, 73"  → ("Street name", [42, 73])
       "••. IOI"                  → ("", [101])
       "Street name"             → ("Street name", [])
+
+    Searches left-to-right and returns the first position whose digit token(s)
+    yield valid page numbers after fix_digits.  Single all-letter tokens (I, l,
+    O, …) are skipped as likely editorial marks.
     """
-    m = re.match(
-        r'^(.*?)\s*[.•·\s]*\s*([0-9I]\S*(?:[,\s]+[0-9I]\S*)*)$',
-        line.rstrip(),
-    )
-    if m:
-        raw_nums = m.group(2)
+    line = line.rstrip()
+    pos = 0
+    while pos < len(line):
+        m = _TRAILING_NUM_RE.search(line, pos)
+        if not m:
+            break
+        raw_nums = m.group(1)
+        # Skip single-char all-letter tokens — almost always column markers.
+        if len(raw_nums.strip()) == 1 and not re.search(r'\d', raw_nums):
+            pos = m.start() + 1
+            continue
         fixed = fix_digits(raw_nums)
         if re.fullmatch(r'[\d,\s]+', fixed.strip()):
             nums = parse_nums(raw_nums)
             if nums:
-                return m.group(1).strip(), nums
+                name = _SEP_TRAIL_RE.sub('', line[:m.start()])
+                return name, nums
+        pos = m.start() + 1
     return line, []
 
 
@@ -96,9 +130,11 @@ def column_lines(page: fitz.Page, n_cols: int = 3) -> list[list[str]]:
     pw = page.rect.width
     cw = pw / n_cols
 
+    # Use a 3-pt leftward bias so page numbers sitting just over a column
+    # boundary (a common OCR artefact) stay with the correct column.
     buckets: dict[int, list] = defaultdict(list)
     for w in raw:
-        col = min(int(((w[0] + w[2]) / 2) / cw), n_cols - 1)
+        col = min(max(int(((w[0] + w[2]) / 2 - 3) / cw), 0), n_cols - 1)
         buckets[col].append(w)
 
     result: list[list[str]] = []
