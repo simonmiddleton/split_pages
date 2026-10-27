@@ -232,7 +232,7 @@ def discover_sections(doc: fitz.Document) -> dict[str, int]:
             sections['index_to_places'] = pdf_page
             needed.discard('index_to_places')
 
-        if 'streets' in needed and re.search(r'Street\s+Directory', text, re.I):
+        if 'streets' in needed and re.search(r'Streets?\s+Di', text, re.I):
             sections['streets'] = pdf_page
             needed.discard('streets')
 
@@ -243,7 +243,7 @@ def discover_sections(doc: fitz.Document) -> dict[str, int]:
             needed.discard('private_residents')
 
         # The Trades section opens with "advertisement pages." as a section title.
-        if 'trades' in needed and re.search(r'advertisement\s+pages', head, re.I):
+        if 'trades' in needed and re.search(r'Classified Trades (&|and) Professions', head, re.I):
             sections['trades'] = pdf_page
             needed.discard('trades')
 
